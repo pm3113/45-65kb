@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Reducer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #74ebd5, #ACB6E5);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    .container {
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      width: 90%;
+      max-width: 800px;
+      text-align: center;
+    }
+    input[type="file"] {
+      margin: 10px 0;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    .image-preview {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    .image-card {
+      margin: 10px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      width: 150px;
+    }
+    .image-card img {
+      width: 100%;
+      height: auto;
+    }
+    .info {
+      padding: 5px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Image Reducer (45–65KB)</h1>
+    <input type="file" id="imageInput" accept="image/*" multiple />
+    <br />
+    <button onclick="compressImages()">Compress Selected</button>
+    <button id="downloadAllBtn" style="display:none;">Download All (ZIP)</button>
+
+    <div class="image-preview" id="preview"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script>
+    const imageInput = document.getElementById('imageInput');
+    const preview = document.getElementById('preview');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
+
+    async function compressImages() {
+      const files = Array.from(imageInput.files);
+      if (files.length === 0) return alert('Please select some images!');
+      if (files.length > 100) return alert('You can upload up to 100 images at once.');
+
+      preview.innerHTML = '';
+      const zip = new JSZip();
+
+      for (const file of files) {
+        if (file.size > 15 * 1024 * 1024) { // 15MB limit per image
+          alert(`${file.name} exceeds 15MB and will be skipped.`);
+          continue;
+        }
+
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        await new Promise(res => img.onload = res);
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const MAX_WIDTH = 1200;
+        const scale = Math.min(1, MAX_WIDTH / img.width);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // Target range: 45KB–65KB
+        let quality = 0.9;
+        let blob;
+        do {
+          blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+          if (blob.size >= 45000 && blob.size <= 65000) break;
+          if (blob.size > 65000) quality -= 0.05;
+          else quality += 0.02;
+        } while (quality > 0.1 && quality < 1);
+
+        const compressedUrl = URL.createObjectURL(blob);
+
+        const card = document.createElement('div');
+        card.className = 'image-card';
+        card.innerHTML = `
+          <img src="${compressedUrl}" alt="Compressed">
+          <div class="info">
+            <strong>${file.name}</strong><br>
+            Original: ${(file.size/1024).toFixed(1)}KB<br>
+            Compressed: ${(blob.size/1024).toFixed(1)}KB<br>
+            <button onclick="downloadBlob('${compressedUrl}', '${file.name}')">Download</button>
+          </div>
+        `;
+        preview.appendChild(card);
+
+        zip.file(file.name.replace(/\.[^/.]+$/, '') + '_compressed.jpg', blob);
+      }
+
+      if (preview.children.length > 0) {
+        downloadAllBtn.style.display = 'inline-block';
+        downloadAllBtn.onclick = async () => {
+          const content = await zip.generateAsync({type: 'blob'});
+          saveAs(content, 'compressed_images.zip');
+        };
+      }
+    }
+
+    function downloadBlob(url, name) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name.replace(/\.[^/.]+$/, '') + '_compressed.jpg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  </script>
+</body>
+</html>
